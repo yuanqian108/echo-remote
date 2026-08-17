@@ -1,0 +1,16 @@
+{
+  "id": "echo-remote",
+  "name": "局域网远程遥控",
+  "version": "1.0",
+  "description": "通过局域网 WebUI 遥控 EchoMusic:进度拖拽、切歌、音量、歌曲信息与封面显示。手机/平板浏览器直接打开。",
+  "author": "yuanqian",
+  "icon": "icon.svg",
+  "main": "index.js",
+  "capabilities": {
+    "webServer": true,
+    "process": true
+  },
+  "requires": {
+    "echoMusicVersion": ">=2.2.7"
+  }
+}

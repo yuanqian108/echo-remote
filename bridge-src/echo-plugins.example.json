@@ -1,0 +1,18 @@
+{
+  "name": "我的 EchoMusic 插件源",
+  "homepage": "https://github.com/<your-name>/<your-plugins-repo>",
+  "plugins": [
+    {
+      "id": "echo-remote",
+      "path": "echo-remote",
+      "repo": "https://github.com/<your-name>/echo-remote",
+      "homepage": "https://github.com/<your-name>/echo-remote#readme",
+      "tags": [
+        "remote",
+        "lan",
+        "web",
+        "control"
+      ]
+    }
+  ]
+}

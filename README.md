@@ -8,6 +8,9 @@
 - 🖼️ 歌曲名、歌手、专辑与**封面**显示(模糊封面背景,自动跟随主题色)
 - 🔁 播放模式切换(顺序 / 列表循环 / 随机 / 单曲循环)
 - ⏩ 倍速切换(0.5x ~ 3x)
+- 🔎 **局域网点歌**:调用 EchoMusic 内置曲库搜索,手机上搜歌、点播、「下一首播放」
+- 📋 **播放列表**:查看当前播放列表,打开时**自动定位到正在播放的那首**,点击任意一首直接切歌
+- 📝 **歌词**:全屏歌词面板,**自动跟随播放逐行高亮并居中滚动**,支持翻译副行;**窗口够宽(≥640px,含手机横屏)点歌词按钮会直接贴在封面右侧显示**,不再占用全屏
 
 ## 原理
 
@@ -15,17 +18,23 @@ EchoMusic 插件的 `ctx.webServer` 被宿主强制绑定在 `127.0.0.1`,无法�
 
 ```
 手机浏览器 ──http://<电脑IP>:<端口>──▶ bin/bridge(局域网桥,0.0.0.0)
-                                      │ 反向代理
-                                      ▼
-                          插件 webServer(127.0.0.1 随机端口)
-                                      │
-                                      ▼
-                          EchoMusic 播放器 API
+     │                                       │
+     │ WebSocket(/ws,推送通道)               │ HTTP 反向代理(一次性请求)
+     │ state/queueMeta/lyricMeta/cmdres      │
+     └──────命令与订阅经 WS 上行────────────▶│
+                                             ▼
+                                 插件 webServer(127.0.0.1 随机端口)
+                                             │
+                                             ▼
+                                 EchoMusic 播放器 API
 ```
 
-- 桥接程序由 Zig 编写,纯标准库,无任何运行时依赖,单个可执行文件约 2.3 MB;
+- **推送通道**:前端与桥之间用 WebSocket(桥上 `/ws` 端点终结,纯标准库实现 RFC 6455)。桥对插件仍是普通 HTTP 客户端——每 500ms 轮询 `/api/state`、每 2s 轮询 `/api/queue?meta=1` 与 `/api/lyric?meta=1`(仅在有订阅者时),变化即时推送给手机;手机命令经 WS 上行,桥转发为 HTTP POST `/api/command` 并立刻补拉一轮 state。搜索、封面、全量队列/歌词加载等一次性请求仍走 HTTP 代理;
+- **降级兼容**:若桥版本过旧(无 `/ws`)或 WS 中断,页面自动退回 HTTP 轮询(500ms),功能不受影响;
+- 桥接程序由 Go 编写,纯标准库,静态编译无运行时依赖,单个可执行文件约 6.5 MB;
+- 桥接程序每个连接两个 goroutine(读/写分离),多台手机并发访问互不阻塞;空闲(无 WS 客户端)时不产生任何上游请求;
 - 插件禁用/卸载/EchoMusic 退出时,宿主会自动终止桥接程序;
-- 桥接程序只做透明转发,所有逻辑(UI、播放控制)都在插件 JS 内。
+- 桥接程序只做转发与推送汇聚,所有业务逻辑(UI、播放控制)都在插件 JS 内。
 
 ## 安装
 
@@ -44,6 +53,9 @@ EchoMusic 插件的 `ctx.webServer` 被宿主强制绑定在 `127.0.0.1`,无法�
 - 点按音量条调节音量;
 - 底部两个胶囊按钮切换播放模式与倍速;
 - 页面右上角圆点显示连接状态(绿=正常);
+- **点歌**:点右上角放大镜按钮打开搜索面板,输入关键词搜索曲库;点击结果立即播放(加入播放队列),点「下一首」插入当前队列下一首;支持上滑加载更多、VIP/无版权标记;
+- **播放列表**:点右上角列表按钮查看当前播放列表,打开时自动滚动定位到正在播放的那首(高亮显示);点击任意一首直接切过去播放,点正在播放那首为播放/暂停;列表较长时可上下滑动按需加载;面板顶部有**定位按钮**(准星图标),滑动到别处后点一下即可跳回正在播放那首(会闪一下提示);面板打开期间每 2 秒与播放器同步一次——在电脑上切歌,手机上的高亮会跟着走;歌单内容变化(增删歌曲/换队列)时自动重新加载并定位;
+- **歌词**:点右上角文档图标显示歌词;**窗口够宽(≥640px,含手机横屏)时直接贴在封面右侧**,再点一次图标收起;**窗口较窄(手机竖屏)时用全屏歌词面板**。当前行以主题色加粗高亮并**自动居中滚动**跟随播放,带翻译的歌词在下方以弱化副行显示;手动上下滑动浏览时会暂停跟随,点面板顶部**定位按钮**(准星图标)跳回当前行并恢复跟随;每 2 秒检查一次换歌或歌词就绪,换歌后自动切换到新歌词;拖动窗口跨过 640px 时,歌词会在「封面右侧 / 全屏」之间就地换位;
 - 建议在手机上「添加到主屏幕」,体验接近原生 App;
 - 手机锁屏界面可通过系统媒体会话控制播放(支持的系统)。
 
@@ -53,7 +65,7 @@ EchoMusic 插件的 `ctx.webServer` 被宿主强制绑定在 `127.0.0.1`,无法�
 
 ```
 echo-remote/
-  manifest.json       插件清单(webServer + process 能力)
+  manifest.json       插件清单(webServer + process + kugouApi 能力)
   index.js            插件入口:HTTP 服务、API、设置面板、Web UI(全部内联)
   icon.svg            插件图标
   bin/                各平台桥接程序
@@ -63,23 +75,25 @@ echo-remote/
     bridge-macos-x64        macOS Intel
     bridge-macos-arm64      macOS Apple Silicon
   bridge-src/
-    bridge.zig        桥接程序源码
+    bridge.go        桥接程序源码(Go,纯标准库)
+    go.mod           Go 模块定义
+    build-all.sh     交叉编译脚本(Linux/macOS)
+    build-all.ps1    交叉编译脚本(Windows)
 ```
 
 ## 自行构建桥接程序
 
-桥接程序用 [Zig](https://ziglang.org/) 0.14.1 编写,纯标准库。安装 Zig 后:
+桥接程序用 Go 编写,纯标准库,只需一套 Go 工具链(1.21+)即可交叉编译全部平台:
 
 ```bash
-# Windows 一键构建全部 5 个平台目标(PowerShell)
+# Linux / macOS 一键构建全部 5 个平台目标
+./bridge-src/build-all.sh
+
+# Windows(PowerShell)
 .\bridge-src\build-all.ps1
 
-# 或手动逐个构建,例如 Windows x64:
-zig build-exe bridge.zig -O ReleaseSmall -fstrip -target x86_64-windows --name bridge-x64
-zig build-exe bridge.zig -O ReleaseSmall -fstrip -target x86_64-linux-musl --name bridge-x64
-zig build-exe bridge.zig -O ReleaseSmall -fstrip -target aarch64-linux-musl --name bridge-arm64
-zig build-exe bridge.zig -O ReleaseSmall -fstrip -target x86_64-macos --name bridge-macos-x64
-zig build-exe bridge.zig -O ReleaseSmall -fstrip -target aarch64-macos --name bridge-macos-arm64
+# 或手动逐个构建,例如本机平台:
+cd bridge-src && CGO_ENABLED=0 go build -trimpath -ldflags "-s -w" -o ../bin/bridge-x64 .
 ```
 
 macOS / Linux 上首次运行前需赋予执行权限: `chmod +x bin/bridge-*`。
@@ -106,7 +120,7 @@ macOS / Linux 上首次运行前需赋予执行权限: `chmod +x bin/bridge-*`�
 
 ## 兼容性
 
-- 要求 EchoMusic ≥ 2.2.7(`webServer` 与 `process` 能力);
+- 要求 EchoMusic ≥ 2.2.7(`webServer`、`process` 与 `kugouApi` 能力;点歌依赖宿主内置曲库搜索接口,播放列表依赖宿主的播放队列接口,歌词依赖宿主的歌词 store,三者均无需额外能力声明);
 - 桥接程序预编译 Windows x64 / Linux x64+arm64 / macOS x64+arm64。
 
 ## License
